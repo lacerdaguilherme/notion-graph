@@ -4,10 +4,12 @@ An Obsidian-style graph view of your Notion workspace. Every page and database i
 structure, database relations, and in-page mentions are edges.
 
 - **Free.** Node script with zero dependencies, hosted on GitHub Pages, rebuilt by GitHub Actions.
-- **Updates on its own.** A scheduled workflow re-crawls Notion every 6 hours (or on demand).
+- **Updates on its own.** A scheduled workflow re-crawls Notion every hour (or on demand).
 - **Cached at every layer.** Raw Notion responses persist between runs so only edited pages are refetched;
   the browser keeps the last graph and your node layout, so the page opens instantly.
 - **Private by default.** Set a password and the published data is AES-encrypted; it is decrypted in your browser.
+- **Readable at scale.** Database rows fold into their database by default, nodes are coloured by
+  top-level section, and the layout is precomputed in CI so the page never waits on a simulation.
 - **Read-only.** The crawler only ever calls GET and `POST /search`. Notion is never modified.
 
 ## One-time setup (5 minutes)
@@ -37,15 +39,22 @@ On GitHub: **Settings → Secrets and variables → Actions → New repository s
 
 **Actions → build graph → Run workflow.** The first run crawls everything (a few minutes for a large workspace).
 When it finishes, the site is live at `https://<you>.github.io/notion-graph/`.
-After that it rebuilds itself every 6 hours.
+After that it rebuilds itself every hour.
 
 ## Using the viewer
 
-- scroll to zoom, drag background to pan, drag nodes to pin them
-- hover a node to highlight its neighbourhood; click to open it in Notion
-- `/` focuses search; matching pages stay bright, the rest dim
-- checkboxes toggle edge kinds (parent / relation / mention) and orphans
-- **re-layout** forgets the saved positions and runs the force layout again
+- **rows collapsed / expanded** folds every database's rows into one square node. Select a database
+  and press *expand N rows* to open just that one.
+- click a node to select it; the right panel shows its details, an *open in Notion* button and a
+  **local graph** switch (1 or 2 hops). Double-click or right-click opens Notion directly.
+- **sections** legend: nodes are coloured by their top-level page; click a section to isolate it.
+- **edited after** slider hides anything not touched since that date.
+- right panel tabs: **hubs** (most linked), **orphans** (no links at all), **stale** (untouched for a
+  year), **recent**. Click any item to jump to it.
+- `/` focuses search, Enter jumps to the first match, Esc clears.
+- hover highlights neighbours; drag pins a node (remembered on this device); **re-layout** discards
+  the precomputed positions and runs a live simulation.
+- **rebuild now** (bottom right) opens the workflow page where one click triggers a fresh crawl.
 
 The graph only shows links that already exist in Notion: no relation set and no `@mention` written means no edge.
 
@@ -56,6 +65,7 @@ Needs Node 18+.
 ```bash
 cp .env.example .env      # put your NOTION_TOKEN in it
 node fetch.js --mentions  # writes graph.json
+node layout.js graph.json # adds precomputed positions
 node encrypt.js graph.json site/data.json && cp index.html site/
 python3 -m http.server 8000 --directory site
 ```
@@ -76,7 +86,9 @@ Then open <http://localhost:8000>.
 - **Crawl cache** (`.cache/`): every raw API response is stored, keyed by request and by the object's
   `last_edited_time`. On the next run a page that hasn't changed costs zero requests. In Actions this
   directory is restored with `actions/cache`, so scheduled runs only touch what changed.
-- **Browser cache**: the last graph and node positions are kept in `localStorage`. The page renders
+- **Layout cache**: `layout.js` runs a Barnes-Hut force simulation in CI (zero dependencies, ~2 s for
+  5,000 nodes) for both the collapsed and the full graph, so the browser only draws.
+- **Browser cache**: the last graph and any nodes you dragged are kept in IndexedDB. The page renders
   immediately from that, then revalidates `data.json` (ETag, so an unchanged file is a 304).
 - Notion limits integrations to ~3 requests/second. The crawler serialises requests 350 ms apart and
   honours `Retry-After` on 429, so a rate limit slows the run down but never fails it.
@@ -87,4 +99,6 @@ Then open <http://localhost:8000>.
   keepalive commit every ~50 days so this never happens.
 - Notion caps relation lists at 25 entries in search results; the crawler pages through the property
   endpoint when it sees exactly 25, so big relations are complete.
-- `parent` edges point child → parent. `relation` edges carry the property name as `label`.
+- `parent` edges point child → parent. `relation` edges carry the property name as `label`; a two-way
+  relation is stored once.
+- The crawl cache is saved even when a later step fails, so a long first crawl is never lost.

@@ -214,7 +214,13 @@ function iconOf(obj) {
     target = normId(target);
     if (!source || !target || source === target) return;
     const k = source + '|' + target + '|' + kind;
-    if (!edges.has(k)) edges.set(k, { source, target, kind, ...(label ? { label } : {}) });
+    if (edges.has(k)) return;
+    if (kind === 'relation') {
+      // a two-way relation shows up once from each side; keep a single edge
+      const rev = edges.get(target + '|' + source + '|' + kind);
+      if (rev) { if (label && rev.label && !rev.label.includes(label)) rev.label += ' / ' + label; return; }
+    }
+    edges.set(k, { source, target, kind, ...(label ? { label } : {}) });
   };
 
   // Step 2: structural edges.
@@ -299,6 +305,15 @@ function iconOf(obj) {
   }
   const byKind = {};
   for (const e of links) byKind[e.kind] = (byKind[e.kind] || 0) + 1;
+  // root = top-most visible ancestor (used for colouring), row = direct child of a visible database
+  for (const n of nodes.values()) {
+    let cur = n, depth = 0, guard = 0;
+    while (cur.parentId && nodes.has(cur.parentId) && guard++ < 64) { cur = nodes.get(cur.parentId); depth++; }
+    n.root = cur.id;
+    n.depth = depth;
+    const p = n.parentId && nodes.get(n.parentId);
+    n.row = !!(p && p.type === 'database');
+  }
   const out = {
     generatedAt: new Date().toISOString(),
     nodes: [...nodes.values()].map(({ parentType, ...n }) => n),

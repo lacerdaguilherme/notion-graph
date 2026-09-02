@@ -5,37 +5,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notion Graph</title>
 <style>
-  :root { --bg:#0f0f12; --fg:#e8e8ec; --dim:#8a8a94; --panel:rgba(22,22,28,.92); --border:#2a2a33; --accent:#7c9cff; }
+  :root { --bg:#0f0f12; --fg:#e8e8ec; --dim:#8a8a94; --panel:rgba(20,20,26,.94); --border:#2a2a33; --accent:#7c9cff; --hi:#1c1c24; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
   #graph { position:absolute; inset:0; }
   .panel { position:absolute; z-index:5; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:10px 12px; backdrop-filter:blur(6px); }
-  #controls { top:12px; left:12px; width:260px; display:flex; flex-direction:column; gap:8px; }
-  #controls input[type=search] { width:100%; padding:7px 9px; border-radius:7px; border:1px solid var(--border); background:#15151a; color:var(--fg); outline:none; font-size:13px; }
-  #controls input[type=search]:focus { border-color:var(--accent); }
-  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; color:var(--dim); }
-  .row label { display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none; }
-  .sw { width:10px; height:10px; border-radius:50%; display:inline-block; }
-  #status { position:absolute; bottom:12px; left:12px; color:var(--dim); font-size:12px; display:flex; gap:12px; align-items:center; }
-  #status b { color:var(--fg); font-weight:600; }
-  #hint { position:absolute; bottom:12px; right:12px; color:var(--dim); font-size:12px; text-align:right; }
+  #left { top:12px; left:12px; width:250px; display:flex; flex-direction:column; gap:9px; max-height:calc(100vh - 70px); overflow:auto; }
+  #right { top:12px; right:12px; width:270px; max-height:calc(100vh - 70px); display:flex; flex-direction:column; gap:8px; }
+  input[type=search] { width:100%; padding:7px 9px; border-radius:7px; border:1px solid var(--border); background:#15151a; color:var(--fg); outline:none; font-size:13px; }
+  input[type=search]:focus { border-color:var(--accent); }
+  .row { display:flex; gap:8px 10px; flex-wrap:wrap; align-items:center; color:var(--dim); }
+  .row label { display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none; white-space:nowrap; }
+  .sw { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+  .sq { width:9px; height:9px; border-radius:2px; display:inline-block; flex:none; }
+  .h { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin-top:2px; }
   button { background:#1c1c23; color:var(--fg); border:1px solid var(--border); border-radius:7px; padding:5px 9px; cursor:pointer; font-size:12px; }
   button:hover { border-color:var(--accent); }
+  button.on { border-color:var(--accent); background:#1f2540; }
+  button.primary { background:var(--accent); color:#0f0f12; border-color:var(--accent); font-weight:600; }
+  #legend { display:flex; flex-direction:column; gap:3px; }
+  #legend .it { display:flex; align-items:center; gap:6px; cursor:pointer; padding:2px 4px; border-radius:5px; color:var(--fg); }
+  #legend .it:hover, #legend .it.on { background:var(--hi); }
+  #legend .it.off { opacity:.4; }
+  #legend .it span.t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  #legend .it span.c { color:var(--dim); font-size:11px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  #status { position:absolute; bottom:12px; left:12px; color:var(--dim); font-size:12px; display:flex; gap:12px; align-items:center; z-index:5; }
+  #status b { color:var(--fg); font-weight:600; }
+  #hint { position:absolute; bottom:12px; right:12px; color:var(--dim); font-size:12px; text-align:right; z-index:5; }
+  a { color:var(--accent); text-decoration:none; }
   #lock { position:absolute; inset:0; z-index:20; display:none; align-items:center; justify-content:center; background:var(--bg); }
   #lock form { width:320px; display:flex; flex-direction:column; gap:10px; }
   #lock input { padding:9px 10px; border-radius:7px; border:1px solid var(--border); background:#15151a; color:var(--fg); font-size:14px; }
   #lock .err { color:#ff7a7a; min-height:1.2em; font-size:12px; }
   #tip { position:absolute; z-index:6; pointer-events:none; display:none; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 10px; max-width:280px; }
-  #tip .t { font-weight:600; }
-  #tip .m { color:var(--dim); font-size:12px; margin-top:2px; }
-  a { color:var(--accent); }
+  #tip .t { font-weight:600; } #tip .m { color:var(--dim); font-size:12px; margin-top:2px; }
+  /* selection + insights */
+  #sel { display:none; flex-direction:column; gap:6px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  #sel .t { font-weight:600; font-size:14px; }
+  #sel .m { color:var(--dim); font-size:12px; }
+  .tabs { display:flex; gap:4px; }
+  .tabs button { flex:1; padding:4px 6px; }
+  #list { overflow:auto; display:flex; flex-direction:column; gap:1px; min-height:0; }
+  #list .it { padding:4px 6px; border-radius:5px; cursor:pointer; display:flex; gap:6px; align-items:center; }
+  #list .it:hover { background:var(--hi); }
+  #list .it span.t { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #list .it span.c { color:var(--dim); font-size:11px; white-space:nowrap; }
+  #empty { color:var(--dim); font-size:12px; padding:4px 6px; }
+  @media (max-width: 800px) { #right { display:none; } #left { width:210px; } }
 </style>
 </head>
 <body>
 <div id="graph"></div>
 
-<div id="controls" class="panel">
-  <input id="q" type="search" placeholder="Search pages…  ( / )" autocomplete="off">
+<div id="left" class="panel">
+  <input id="q" type="search" placeholder="Search…  ( / )   Enter = go to first match" autocomplete="off">
+  <div class="row">
+    <button id="mode" class="on" title="fold database rows into their database">rows collapsed</button>
+    <button id="fit" title="zoom to fit">fit</button>
+    <button id="relayout" title="run the live force layout from scratch">re-layout</button>
+  </div>
+  <div class="h">edges</div>
   <div class="row">
     <label><input type="checkbox" data-kind="parent" checked><span class="sw" style="background:#5f6b85"></span>parent</label>
     <label><input type="checkbox" data-kind="relation" checked><span class="sw" style="background:#f2b36b"></span>relation</label>
@@ -43,14 +73,40 @@
   </div>
   <div class="row">
     <label><input type="checkbox" id="orphans" checked>orphans</label>
-    <label><input type="checkbox" id="labels">always label</label>
-    <button id="fit" title="zoom to fit">fit</button>
-    <button id="relayout" title="forget saved positions and re-run the layout">re-layout</button>
+    <label><input type="checkbox" id="labels">all labels</label>
   </div>
+  <div class="h">edited after <span id="dateLbl" style="color:var(--fg)">—</span></div>
+  <input id="date" type="range" min="0" max="1000" value="0">
+  <div class="h">sections <span id="legendHint" style="text-transform:none;letter-spacing:0">(click to isolate)</span></div>
+  <div id="legend"></div>
+</div>
+
+<div id="right" class="panel">
+  <div id="sel">
+    <div class="t"></div>
+    <div class="m"></div>
+    <div class="row">
+      <button id="open" class="primary">open in Notion ↗</button>
+      <button id="expand" style="display:none"></button>
+    </div>
+    <div class="row">
+      <span style="color:var(--dim)">local graph:</span>
+      <button data-hops="0" class="on">off</button>
+      <button data-hops="1">1 hop</button>
+      <button data-hops="2">2 hops</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button data-tab="hubs" class="on">hubs</button>
+    <button data-tab="orphans">orphans</button>
+    <button data-tab="stale">stale</button>
+    <button data-tab="recent">recent</button>
+  </div>
+  <div id="list"></div>
 </div>
 
 <div id="status"><span><b id="nN">0</b> nodes</span><span><b id="nE">0</b> edges</span><span id="gen"></span></div>
-<div id="hint">scroll to zoom · drag to pan · click opens in Notion<br><span id="src"></span></div>
+<div id="hint">click = select · double-click = open in Notion · drag = pin<br><span id="src"></span> · <a id="rebuild" href="#" target="_blank" rel="noopener">rebuild now ↗</a></div>
 <div id="tip"><div class="t"></div><div class="m"></div></div>
 
 <div id="lock">
@@ -59,7 +115,7 @@
     <div style="color:var(--dim)">This graph is encrypted. Enter the password to view it.</div>
     <input id="pw" type="password" placeholder="password" autofocus>
     <label style="color:var(--dim)"><input type="checkbox" id="remember" checked> remember on this device</label>
-    <button type="submit">Unlock</button>
+    <button type="submit" class="primary">Unlock</button>
     <div class="err" id="lockErr"></div>
   </form>
 </div>
@@ -67,97 +123,102 @@
 <script src="https://cdn.jsdelivr.net/npm/force-graph@1.47.0/dist/force-graph.min.js"></script>
 <script>
 (() => {
-  const $ = (s) => document.querySelector(s);
-  const LS = { graph:'ng:graph', pos:'ng:pos', pw:'ng:pw' };
-  const COLORS = { page:'#d9d9e3', database:'#f2b36b', edge:{ parent:'#5f6b85', relation:'#f2b36b', mention:'#7cd992' } };
-  const ls = {
-    get(k){ try { return localStorage.getItem(k); } catch { return null; } },
-    set(k,v){ try { localStorage.setItem(k,v); } catch {} },
-    del(k){ try { localStorage.removeItem(k); } catch {} },
-  };
+  const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
+  const EDGE = { parent:'#5f6b85', relation:'#f2b36b', mention:'#7cd992' };
+  const PALETTE = ['#7c9cff','#f2b36b','#7cd992','#ff7ab6','#5ad1e6','#c99cff','#ffd166','#ff8c69','#8bd7b5','#e6a2ff','#9ad0ff','#f5c6a5'];
+  const GREY = '#6b6b75';
+  const YEAR = 365 * 86400 * 1000;
+
+  // ---------- IndexedDB (falls back to memory) ----------
+  const idb = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('notion-graph', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    }));
+    const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('kv', mode); const req = fn(t.objectStore('kv')); t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error); }); };
+    return {
+      get: (k) => tx('readonly', (s) => s.get(k)).catch(() => undefined),
+      set: (k, v) => tx('readwrite', (s) => s.put(v, k)).catch(() => {}),
+      del: (k) => tx('readwrite', (s) => s.delete(k)).catch(() => {}),
+    };
+  })();
+  const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch {} }, del(k){ try { localStorage.removeItem(k); } catch {} } };
 
   // ---------- state ----------
-  let graph = null;           // {generatedAt,nodes,links}
-  let fg = null;
-  let hover = null;
-  const neighbors = new Map(); // id -> Set(id)
-  const kinds = { parent:true, relation:true, mention:true };
-  let query = '';
-  let showOrphans = true;
-  let alwaysLabel = false;
-  let positions = {};
-  try { positions = JSON.parse(ls.get(LS.pos) || '{}'); } catch {}
+  let graph = null, byId = new Map(), rootInfo = new Map(), roots = [];
+  let fg = null, hover = null;
+  const st = { collapsed:true, expanded:new Set(), kinds:{parent:true, relation:true, mention:true}, orphans:true, labels:false, minDate:0, rootFilter:null, selected:null, hops:0, query:'', tab:'hubs' };
+  let overrides = {};              // dragged positions {mode:id -> [x,y]}
+  let view = { nodes:[], links:[] }; // current visible data
+  let vdeg = new Map(), vneigh = new Map(), labelMin = Infinity;
+  let staticLayout = false, autoFitUntil = 0;
 
   // ---------- loading ----------
   async function load() {
-    // 1. instant render from local cache
-    const cached = ls.get(LS.graph);
-    if (cached) { try { setGraph(JSON.parse(cached), 'local cache'); } catch {} }
-    // 2. revalidate (ETag makes this cheap when unchanged)
+    $('#rebuild').href = rebuildUrl();
+    overrides = (await idb.get('overrides')) || {};
+    const cached = await idb.get('graph');
+    if (cached) setGraph(cached, 'local cache');
     try {
       const res = await fetch('data.json', { cache:'no-cache' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const body = await res.json();
       const fresh = body.encrypted ? await unlock(body) : body;
       if (!fresh) return;
-      if (!graph || fresh.generatedAt !== graph.generatedAt) {
-        ls.set(LS.graph, JSON.stringify(fresh));
-        setGraph(fresh, 'network');
-      } else {
-        $('#src').textContent = 'up to date';
-      }
+      if (!graph || fresh.generatedAt !== graph.generatedAt) { await idb.set('graph', fresh); setGraph(fresh, 'network'); }
+      else $('#src').textContent = 'up to date';
     } catch (e) {
-      if (!graph) {
-        $('#src').innerHTML = 'no data yet. run the <b>build graph</b> workflow once. (' + e.message + ')';
-      } else $('#src').textContent = 'offline · showing cached graph';
+      $('#src').innerHTML = graph ? 'offline · showing cached graph' : 'no data yet — run the <b>build graph</b> workflow once (' + e.message + ')';
     }
   }
-
+  function rebuildUrl() {
+    const m = location.hostname.match(/^([^.]+)\.github\.io$/), repo = location.pathname.split('/')[1];
+    return m && repo ? `https://github.com/${m[1]}/${repo}/actions/workflows/build.yml` : '#';
+  }
   async function unlock(env) {
     const tryPw = async (pw) => {
-      const enc = new TextEncoder();
-      const b64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+      const enc = new TextEncoder(), b64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
       const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
       const key = await crypto.subtle.deriveKey({ name:'PBKDF2', salt:b64(env.salt), iterations:env.iterations, hash:'SHA-256' }, base, { name:'AES-GCM', length:256 }, false, ['decrypt']);
       const plain = await crypto.subtle.decrypt({ name:'AES-GCM', iv:b64(env.iv) }, key, b64(env.data));
-      let bytes = plain;
-      if (env.gzip) bytes = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+      const bytes = env.gzip ? await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : plain;
       return JSON.parse(new TextDecoder().decode(bytes));
     };
-    const saved = ls.get(LS.pw);
-    if (saved) { try { return await tryPw(saved); } catch { ls.del(LS.pw); } }
+    const saved = ls.get('ng:pw');
+    if (saved) { try { return await tryPw(saved); } catch { ls.del('ng:pw'); } }
     return new Promise((resolve) => {
       const lock = $('#lock'); lock.style.display = 'flex'; $('#pw').focus();
       $('#lockForm').onsubmit = async (ev) => {
-        ev.preventDefault();
-        $('#lockErr').textContent = '';
-        try {
-          const g = await tryPw($('#pw').value);
-          if ($('#remember').checked) ls.set(LS.pw, $('#pw').value);
-          lock.style.display = 'none';
-          resolve(g);
-        } catch { $('#lockErr').textContent = 'wrong password'; }
+        ev.preventDefault(); $('#lockErr').textContent = '';
+        try { const g = await tryPw($('#pw').value); if ($('#remember').checked) ls.set('ng:pw', $('#pw').value); lock.style.display = 'none'; resolve(g); }
+        catch { $('#lockErr').textContent = 'wrong password'; }
       };
     });
   }
 
-  // ---------- graph ----------
+  // ---------- graph setup ----------
   function setGraph(g, source) {
     graph = g;
-    neighbors.clear();
-    for (const n of g.nodes) neighbors.set(n.id, new Set());
-    for (const l of g.links) { neighbors.get(l.source)?.add(l.target); neighbors.get(l.target)?.add(l.source); }
-    let havePos = 0;
-    for (const n of g.nodes) { const p = positions[n.id]; if (p) { n.x = p[0]; n.y = p[1]; havePos++; } }
-    const warm = havePos > g.nodes.length * 0.8;
+    byId = new Map(g.nodes.map((n) => [n.id, n]));
+    staticLayout = g.nodes.length > 0 && g.nodes.every((n) => Number.isFinite(n.x));
+    // roots
+    rootInfo = new Map();
+    for (const n of g.nodes) { const r = rootInfo.get(n.root) || { id:n.root, count:0 }; r.count++; rootInfo.set(n.root, r); }
+    roots = [...rootInfo.values()].sort((a, b) => b.count - a.count);
+    roots.forEach((r, i) => { r.color = i < PALETTE.length ? PALETTE[i] : GREY; r.title = byId.get(r.id)?.title || 'Untitled'; });
+    if (st.rootFilter && !rootInfo.has(st.rootFilter)) st.rootFilter = null;
+    // date slider bounds
+    const times = g.nodes.map((n) => +new Date(n.lastEdited || 0)).filter((t) => t > 0);
+    st.tMin = Math.min(...times); st.tMax = Date.now();
     $('#gen').textContent = 'updated ' + rel(g.generatedAt);
-    $('#src').textContent = 'loaded from ' + source + (warm ? ' · saved layout' : '');
+    $('#src').textContent = 'loaded from ' + source + (staticLayout ? ' · precomputed layout' : '');
     if (!fg) fg = makeGraph();
-    fg.warmupTicks(warm ? 0 : 60).cooldownTicks(warm ? 80 : 300);
-    fg.d3Force('charge').strength(-40);
-    fg.d3Force('link').distance((l) => l.kind === 'parent' ? 28 : 50);
-    apply();
-    if (!warm) setTimeout(() => fg.zoomToFit(600, 40), 900);
+    renderLegend(); renderList();
+    apply(true);
   }
 
   function makeGraph() {
@@ -166,119 +227,245 @@
       .width(el.clientWidth || innerWidth).height(el.clientHeight || innerHeight)
       .backgroundColor('#0f0f12')
       .nodeId('id')
-      .nodeVal((n) => 1 + Math.sqrt(n.degree || 0))
       .nodeLabel(() => '')
-      .linkColor((l) => alpha(COLORS.edge[l.kind] || '#888', linkDim(l) ? .06 : .45))
-      .linkWidth((l) => hover && (l.source.id === hover.id || l.target.id === hover.id) ? 2 : 1)
-      .linkDirectionalParticles(0)
+      .linkColor((l) => alpha(EDGE[l.kind] || '#888', linkDim(l) ? .05 : Math.min(.7, .3 + (l.weight || 1) * .04)))
+      .linkWidth((l) => { const w = 0.5 + Math.log2(l.weight || 1) * .8; return isHot(l) ? w + 1.2 : w; })
       .nodeCanvasObjectMode(() => 'replace')
-      .nodeCanvasObject((n, ctx, scale) => {
-        const r = 2.2 + Math.sqrt(n.degree || 0) * 1.4;
-        const dim = nodeDim(n);
-        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 2*Math.PI);
-        ctx.fillStyle = alpha(COLORS[n.type] || COLORS.page, dim ? .12 : 1);
-        ctx.fill();
-        if (isMatch(n) && query) { ctx.strokeStyle = '#7c9cff'; ctx.lineWidth = 1.5/scale; ctx.stroke(); }
-        const showLabel = !dim && (alwaysLabel || scale > 2.2 || (hover && (hover.id === n.id || neighbors.get(hover.id)?.has(n.id))) || (query && isMatch(n)) || n.degree >= 12);
-        if (showLabel) {
-          const fs = Math.max(10/scale, 2.5);
-          ctx.font = `${n.type==='database'?'600 ':''}${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-          ctx.fillStyle = alpha('#e8e8ec', hover && hover.id !== n.id && !neighbors.get(hover.id)?.has(n.id) ? .35 : .95);
-          const label = (n.icon ? n.icon + ' ' : '') + trunc(n.title, 40);
-          ctx.fillText(label, n.x, n.y + r + 1.5/scale);
-        }
-      })
-      .nodePointerAreaPaint((n, color, ctx) => { const r = 2.2 + Math.sqrt(n.degree||0)*1.4 + 2; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 2*Math.PI); ctx.fill(); })
+      .nodeCanvasObject(drawNode)
+      .nodePointerAreaPaint((n, color, ctx) => { const r = radius(n) + 2; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 2*Math.PI); ctx.fill(); })
       .onNodeHover((n) => { hover = n; el.style.cursor = n ? 'pointer' : null; tip(n); })
-      .onNodeClick((n) => window.open(n.url, '_blank', 'noopener'))
-      .onNodeDragEnd((n) => { n.fx = n.x; n.fy = n.y; savePositions(); })
-      .onBackgroundClick(() => { if ($('#q').value) { $('#q').value=''; query=''; apply(); } })
-      .onEngineStop(() => savePositions())
-      .onZoom(() => { if (hover) tip(null); });
-    window.addEventListener('resize', () => f.width(el.clientWidth).height(el.clientHeight));
+      .onNodeClick((n, ev) => { if (ev && (ev.metaKey || ev.ctrlKey)) return window.open(n.url, '_blank', 'noopener'); select(n.id); })
+      .onNodeRightClick((n) => window.open(n.url, '_blank', 'noopener'))
+      .onNodeDragEnd((n) => { n.fx = n.x; n.fy = n.y; overrides[modeKey() + ':' + n.id] = [n.x, n.y]; idb.set('overrides', overrides); })
+      .onBackgroundClick(() => { if (st.selected) { st.selected = null; if (st.hops) { st.hops = 0; apply(); } renderSel(); redraw(); } })
+      .onZoom(() => { if (hover) tip(null); })
+      .onEngineStop(() => { if (!staticLayout || st.hops) fg.zoomToFit(0, 60); });
+    el.addEventListener('dblclick', () => { if (hover) window.open(hover.url, '_blank', 'noopener'); });
+    window.addEventListener('resize', () => { f.width(el.clientWidth).height(el.clientHeight); if (Date.now() < autoFitUntil) setTimeout(() => f.zoomToFit(0, 40), 50); });
     return f;
   }
 
-  function visibleData() {
-    const vis = new Set(graph.nodes.map(n => n.id));
-    const links = graph.links.filter((l) => kinds[l.kind]);
-    if (!showOrphans) {
-      const deg = new Map();
-      for (const l of links) { deg.set(l.source, 1); deg.set(l.target, 1); }
-      for (const n of graph.nodes) if (!deg.has(n.id)) vis.delete(n.id);
+  const modeKey = () => (st.hops ? 'local' : st.collapsed ? 'c' : 'f');
+  const radius = (n) => Math.min(16, (n.type === 'database' ? 4 : n.row ? 1.6 : 2.4) + Math.sqrt(vdeg.get(n.id) || 0) * 1.1);
+  const colorOf = (n) => (rootInfo.get(n.root)?.color) || GREY;
+
+  function drawNode(n, ctx, scale) {
+    const r = radius(n), dim = nodeDim(n), col = colorOf(n);
+    ctx.fillStyle = alpha(col, dim ? .1 : n.row ? .8 : 1);
+    ctx.beginPath();
+    if (n.type === 'database') { const s = r * 1.7; roundRect(ctx, n.x - s/2, n.y - s/2, s, s, Math.min(3, s/4)); }
+    else ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+    ctx.fill();
+    if (n.id === st.selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / scale; ctx.stroke(); }
+    else if (st.query && isMatch(n)) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2 / scale; ctx.stroke(); }
+    if (dim) return;
+    const focus = hover ? hover.id : st.selected;
+    const near = focus ? (focus === n.id || vneigh.get(focus)?.has(n.id)) : false;
+    const nearLabel = near && (focus === n.id || (vneigh.get(focus)?.size || 0) <= 60);
+    const show = st.labels || nearLabel || (st.query && isMatch(n)) || n.type === 'database' || scale > 3.5 || (!n.row && (vdeg.get(n.id) || 0) >= labelMin);
+    if (!show) return;
+    const fs = Math.max(10 / scale, 2.2);
+    ctx.font = `${n.type === 'database' ? '600 ' : ''}${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = alpha('#e8e8ec', (hover || st.selected) && !near ? .35 : .95);
+    ctx.fillText((n.icon ? n.icon + ' ' : '') + trunc(n.title, 36), n.x, n.y + r + 1.5 / scale);
+  }
+  function roundRect(ctx, x, y, w, h, r) { ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r); ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath(); }
+
+  // ---------- view building ----------
+  function buildView() {
+    const g = graph;
+    const rep = new Map();
+    for (const n of g.nodes) rep.set(n.id, st.collapsed && n.row && !st.expanded.has(n.parentId) ? n.parentId : n.id);
+    const pass = (n) => (!st.rootFilter || n.root === st.rootFilter) && (!st.minDate || +new Date(n.lastEdited || 0) >= st.minDate || (n.type === 'database' && st.collapsed));
+    let visible = new Set();
+    for (const n of g.nodes) if (rep.get(n.id) === n.id && pass(n)) visible.add(n.id);
+    // links mapped through rep
+    const seen = new Map();
+    for (const l of g.links) {
+      if (!st.kinds[l.kind]) continue;
+      const s = rep.get(l.source), t = rep.get(l.target);
+      if (!s || !t || s === t || !visible.has(s) || !visible.has(t)) continue;
+      const a = s < t ? s : t, b = s < t ? t : s, k = a + '|' + b + '|' + l.kind;
+      const e = seen.get(k); if (e) e.weight++; else seen.set(k, { source:s, target:t, kind:l.kind, weight:1, label:l.label });
     }
-    const nodes = graph.nodes.filter((n) => vis.has(n.id));
-    // force-graph mutates link source/target into objects; give it fresh copies each time
-    return { nodes, links: links.filter((l) => vis.has(l.source) && vis.has(l.target)).map((l) => ({ ...l })) };
+    let links = [...seen.values()];
+    // local mode: restrict to N hops around selected
+    if (st.hops && st.selected && visible.has(rep.get(st.selected))) {
+      const adj = new Map();
+      for (const l of links) { (adj.get(l.source) || adj.set(l.source, new Set()).get(l.source)).add(l.target); (adj.get(l.target) || adj.set(l.target, new Set()).get(l.target)).add(l.source); }
+      let frontier = new Set([rep.get(st.selected)]), keep = new Set(frontier);
+      for (let h = 0; h < st.hops; h++) { const next = new Set(); for (const id of frontier) for (const m of adj.get(id) || []) if (!keep.has(m)) { keep.add(m); next.add(m); } frontier = next; }
+      visible = keep;
+      links = links.filter((l) => keep.has(l.source) && keep.has(l.target));
+    }
+    vdeg = new Map(); vneigh = new Map();
+    for (const l of links) {
+      vdeg.set(l.source, (vdeg.get(l.source) || 0) + l.weight); vdeg.set(l.target, (vdeg.get(l.target) || 0) + l.weight);
+      (vneigh.get(l.source) || vneigh.set(l.source, new Set()).get(l.source)).add(l.target);
+      (vneigh.get(l.target) || vneigh.set(l.target, new Set()).get(l.target)).add(l.source);
+    }
+    if (!st.orphans) for (const id of [...visible]) if (!vdeg.has(id) && id !== st.selected) visible.delete(id);
+    const nodes = [...visible].map((id) => byId.get(id));
+    // label budget: label the ~120 best-connected nodes
+    const degs = nodes.map((n) => vdeg.get(n.id) || 0).sort((a, b) => b - a);
+    labelMin = degs.length > 120 ? Math.max(2, degs[120]) : 1;
+    return { nodes, links };
   }
 
-  function apply() {
-    const d = visibleData();
-    fg.graphData(d);
-    $('#nN').textContent = d.nodes.length.toLocaleString();
-    $('#nE').textContent = d.links.length.toLocaleString();
+  function apply(first) {
+    view = buildView();
+    const mode = modeKey();
+    // positions
+    const useStatic = staticLayout && !st.hops;
+    for (const n of view.nodes) {
+      const o = overrides[mode + ':' + n.id];
+      delete n.fx; delete n.fy;
+      if (o) { n.x = o[0]; n.y = o[1]; n.fx = o[0]; n.fy = o[1]; continue; }
+      if (!useStatic) continue;
+      if (st.collapsed) {
+        if (n.row) { // expanded rows: ring around their database's collapsed position
+          const db = byId.get(n.parentId), sibs = graph.nodes.filter((m) => m.parentId === n.parentId && m.row);
+          const i = sibs.indexOf(n) + 4, R = 7 * Math.sqrt(i), a = i * 2.39996;
+          n.x = (db.cx || 0) + R * Math.cos(a); n.y = (db.cy || 0) + R * Math.sin(a);
+        } else { n.x = n.cx ?? n.x; n.y = n.cy ?? n.y; }
+      } else { n.x = n.px ?? n.x; n.y = n.py ?? n.y; }
+    }
+    if (st.hops) { // local: put selected at center, seed others by hop distance then simulate briefly
+      const c = byId.get(st.selected); const cx = c.x || 0, cy = c.y || 0;
+      view.nodes.forEach((n, i) => { if (n.id !== st.selected) { const a = i * 2.4; const d = vneigh.get(st.selected)?.has(n.id) ? 40 : 90; n.x = cx + d * Math.cos(a); n.y = cy + d * Math.sin(a); } });
+      c.fx = cx; c.fy = cy;
+    }
+    if (useStatic) fg.warmupTicks(0).cooldownTicks(0);
+    else { fg.warmupTicks(first ? 80 : 0).cooldownTicks(st.hops ? 150 : 400); fg.d3Force('charge').strength(st.hops ? -80 : -30); fg.d3Force('link').distance((l) => (l.kind === 'parent' ? 25 : l.kind === 'relation' ? 45 : 60)); }
+    fg.graphData({ nodes: view.nodes, links: view.links.map((l) => ({ ...l })) });
+    $('#nN').textContent = view.nodes.length.toLocaleString();
+    $('#nE').textContent = view.links.length.toLocaleString();
+    if (!useStatic && !st.hops) fg.d3ReheatSimulation();
+    if (first) autoFitUntil = Date.now() + 5000;
+    if (useStatic) { setTimeout(() => fg.zoomToFit(0, 40), 300); if (first) setTimeout(() => fg.zoomToFit(0, 40), 1200); }
+    else if (st.hops) setTimeout(() => fg.zoomToFit(0, 60), 1500);
+    renderSel();
   }
+  const redraw = () => fg && fg.graphData(fg.graphData());
+
+  // preserve precomputed full positions under px/py so collapsed/expanded switching is lossless
+  const stashFull = () => { for (const n of graph.nodes) { if (n.px === undefined) { n.px = n.x; n.py = n.y; } } };
 
   // ---------- dimming ----------
-  const isMatch = (n) => !query || (n.title || '').toLowerCase().includes(query);
+  const isMatch = (n) => !st.query || (n.title || '').toLowerCase().includes(st.query);
   function nodeDim(n) {
-    if (hover) return !(hover.id === n.id || neighbors.get(hover.id)?.has(n.id));
-    if (query) return !isMatch(n);
+    if (hover) return !(hover.id === n.id || vneigh.get(hover.id)?.has(n.id));
+    if (st.query) return !isMatch(n);
+    if (st.selected && !st.hops) return !(st.selected === n.id || vneigh.get(st.selected)?.has(n.id));
     return false;
   }
+  const endId = (x) => (x && x.id) || x;
+  function isHot(l) { const s = endId(l.source), t = endId(l.target), h = hover ? hover.id : st.selected; return h && (s === h || t === h); }
   function linkDim(l) {
-    const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+    const s = endId(l.source), t = endId(l.target);
     if (hover) return !(s === hover.id || t === hover.id);
-    if (query) { const a = byId(s), b = byId(t); return !(a && b && isMatch(a) && isMatch(b)); }
+    if (st.query) { const a = byId.get(s), b = byId.get(t); return !(a && b && isMatch(a) && isMatch(b)); }
+    if (st.selected && !st.hops) return !(s === st.selected || t === st.selected);
     return false;
   }
-  const idx = new Map();
-  function byId(id) { if (!idx.size && graph) for (const n of graph.nodes) idx.set(n.id, n); return idx.get(id); }
 
-  // ---------- positions ----------
-  let saveT;
-  function savePositions() {
-    clearTimeout(saveT);
-    saveT = setTimeout(() => {
-      const { nodes } = fg.graphData();
-      for (const n of nodes) if (Number.isFinite(n.x)) positions[n.id] = [Math.round(n.x*10)/10, Math.round(n.y*10)/10];
-      ls.set(LS.pos, JSON.stringify(positions));
-    }, 300);
+  // ---------- selection / panels ----------
+  function select(id, zoom) {
+    st.selected = id;
+    if (st.hops) apply(); else { renderSel(); redraw(); }
+    if (zoom) { const n = byId.get(id); const vis = view.nodes.includes(n) ? n : byId.get(n.row && st.collapsed && !st.expanded.has(n.parentId) ? n.parentId : id); if (vis && Number.isFinite(vis.x)) { const ms = document.hidden ? 0 : 600; fg.centerAt(vis.x, vis.y, ms); fg.zoom(Math.max(fg.zoom(), 3), ms); } }
+  }
+  function renderSel() {
+    const box = $('#sel'), n = st.selected && byId.get(st.selected);
+    if (!n) { box.style.display = 'none'; return; }
+    box.style.display = 'flex';
+    box.querySelector('.t').textContent = (n.icon ? n.icon + ' ' : '') + n.title;
+    const rows = n.type === 'database' ? graph.nodes.filter((m) => m.parentId === n.id && m.row).length : 0;
+    box.querySelector('.m').textContent = `${n.type}${n.row ? ' (row)' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'}${rows ? ` · ${rows} rows` : ''} · edited ${rel(n.lastEdited)} · section: ${rootInfo.get(n.root)?.title || '?'}`;
+    const ex = $('#expand');
+    if (n.type === 'database' && st.collapsed && rows) { ex.style.display = ''; ex.textContent = st.expanded.has(n.id) ? 'collapse rows' : `expand ${rows} rows`; } else ex.style.display = 'none';
+    $$('#sel [data-hops]').forEach((b) => b.classList.toggle('on', +b.dataset.hops === st.hops));
+  }
+  function renderLegend() {
+    const el = $('#legend'); el.innerHTML = '';
+    for (const r of roots.slice(0, 14)) {
+      const d = document.createElement('div');
+      d.className = 'it' + (st.rootFilter ? (st.rootFilter === r.id ? ' on' : ' off') : '');
+      d.innerHTML = `<span class="sw" style="background:${r.color}"></span><span class="t"></span><span class="c">${r.count}</span>`;
+      d.querySelector('.t').textContent = r.title;
+      d.onclick = () => { st.rootFilter = st.rootFilter === r.id ? null : r.id; renderLegend(); apply(); };
+      el.appendChild(d);
+    }
+    if (roots.length > 14) { const d = document.createElement('div'); d.className = 'it off'; d.innerHTML = `<span class="sw" style="background:${GREY}"></span><span class="t">${roots.length - 14} smaller sections</span>`; el.appendChild(d); }
+  }
+  function renderList() {
+    const el = $('#list'); el.innerHTML = '';
+    const now = Date.now();
+    let items = [];
+    if (st.tab === 'hubs') items = [...graph.nodes].sort((a, b) => b.degree - a.degree).slice(0, 100).map((n) => [n, n.degree + ' links']);
+    if (st.tab === 'orphans') items = graph.nodes.filter((n) => n.degree === 0).sort((a, b) => (a.title || '').localeCompare(b.title || '')).slice(0, 200).map((n) => [n, n.row ? 'row' : n.type]);
+    if (st.tab === 'stale') items = graph.nodes.filter((n) => n.lastEdited && now - new Date(n.lastEdited) > YEAR).sort((a, b) => new Date(a.lastEdited) - new Date(b.lastEdited)).slice(0, 200).map((n) => [n, rel(n.lastEdited)]);
+    if (st.tab === 'recent') items = [...graph.nodes].filter((n) => n.lastEdited).sort((a, b) => new Date(b.lastEdited) - new Date(a.lastEdited)).slice(0, 100).map((n) => [n, rel(n.lastEdited)]);
+    const counts = { hubs: '', orphans: graph.nodes.filter((n) => n.degree === 0).length, stale: graph.nodes.filter((n) => n.lastEdited && now - new Date(n.lastEdited) > YEAR).length, recent: '' };
+    $$('.tabs [data-tab]').forEach((b) => { b.classList.toggle('on', b.dataset.tab === st.tab); b.textContent = b.dataset.tab + (counts[b.dataset.tab] ? ` ${counts[b.dataset.tab]}` : ''); });
+    if (!items.length) { el.innerHTML = '<div id="empty">nothing here</div>'; return; }
+    for (const [n, meta] of items) {
+      const d = document.createElement('div'); d.className = 'it';
+      d.innerHTML = `<span class="${n.type === 'database' ? 'sq' : 'sw'}" style="background:${colorOf(n)}"></span><span class="t"></span><span class="c">${meta}</span>`;
+      d.querySelector('.t').textContent = (n.icon ? n.icon + ' ' : '') + (n.title || 'Untitled');
+      d.onclick = () => select(n.id, true);
+      el.appendChild(d);
+    }
   }
 
-  // ---------- ui ----------
+  // ---------- ui events ----------
   function tip(n) {
     const t = $('#tip');
     if (!n) { t.style.display = 'none'; return; }
     t.querySelector('.t').textContent = (n.icon ? n.icon + ' ' : '') + n.title;
-    t.querySelector('.m').textContent = `${n.type} · ${n.degree} link${n.degree===1?'':'s'} · edited ${rel(n.lastEdited)}`;
-    t.style.left = (mouse.x + 14) + 'px'; t.style.top = (mouse.y + 14) + 'px';
-    t.style.display = 'block';
+    t.querySelector('.m').textContent = `${n.type}${n.row ? ' row' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'} · edited ${rel(n.lastEdited)}`;
+    t.style.left = (mouse.x + 14) + 'px'; t.style.top = (mouse.y + 14) + 'px'; t.style.display = 'block';
   }
-  const mouse = { x: 0, y: 0 };
+  const mouse = { x:0, y:0 };
   document.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; const t = $('#tip'); if (t.style.display === 'block') { t.style.left = (e.clientX + 14) + 'px'; t.style.top = (e.clientY + 14) + 'px'; } });
-  $('#q').addEventListener('input', (e) => { query = e.target.value.trim().toLowerCase(); idx.clear(); fg && fg.graphData(fg.graphData()); });
-  document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); } if (e.key === 'Escape') { $('#q').value=''; query=''; $('#q').blur(); fg && fg.graphData(fg.graphData()); } });
-  for (const cb of document.querySelectorAll('input[data-kind]')) cb.addEventListener('change', () => { kinds[cb.dataset.kind] = cb.checked; apply(); });
-  $('#orphans').addEventListener('change', (e) => { showOrphans = e.target.checked; apply(); });
-  $('#labels').addEventListener('change', (e) => { alwaysLabel = e.target.checked; fg && fg.graphData(fg.graphData()); });
+  $('#q').addEventListener('input', (e) => { st.query = e.target.value.trim().toLowerCase(); redraw(); });
+  $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && st.query) { const m = graph.nodes.find((n) => isMatch(n)); if (m) select(m.id, true); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
+    if (e.key === 'Escape') { $('#q').value = ''; st.query = ''; $('#q').blur(); if (st.hops) { st.hops = 0; apply(); } redraw(); }
+  });
+  $$('input[data-kind]').forEach((cb) => cb.addEventListener('change', () => { st.kinds[cb.dataset.kind] = cb.checked; apply(); }));
+  $('#orphans').addEventListener('change', (e) => { st.orphans = e.target.checked; apply(); });
+  $('#labels').addEventListener('change', (e) => { st.labels = e.target.checked; redraw(); });
   $('#fit').addEventListener('click', () => fg && fg.zoomToFit(500, 40));
-  $('#relayout').addEventListener('click', () => { positions = {}; ls.del(LS.pos); for (const n of graph.nodes) { delete n.x; delete n.y; delete n.fx; delete n.fy; } setGraph(graph, 'memory'); fg.d3ReheatSimulation(); });
+  $('#mode').addEventListener('click', () => { stashFull(); st.collapsed = !st.collapsed; st.hops = 0; $('#mode').textContent = st.collapsed ? 'rows collapsed' : 'rows expanded'; $('#mode').classList.toggle('on', st.collapsed); apply(); });
+  $('#relayout').addEventListener('click', () => { staticLayout = false; overrides = {}; idb.del('overrides'); for (const n of graph.nodes) { delete n.fx; delete n.fy; } apply(); });
+  $('#open').addEventListener('click', () => { const n = byId.get(st.selected); if (n) window.open(n.url, '_blank', 'noopener'); });
+  $('#expand').addEventListener('click', () => { const id = st.selected; if (st.expanded.has(id)) st.expanded.delete(id); else st.expanded.add(id); apply(); });
+  $$('#sel [data-hops]').forEach((b) => b.addEventListener('click', () => { st.hops = +b.dataset.hops; apply(); }));
+  $$('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => { st.tab = b.dataset.tab; renderList(); }));
+  $('#date').addEventListener('input', (e) => {
+    const v = +e.target.value / 1000; st.minDate = v ? st.tMin + (st.tMax - st.tMin) * v : 0;
+    $('#dateLbl').textContent = v ? new Date(st.minDate).toLocaleDateString() : '—';
+  });
+  $('#date').addEventListener('change', () => apply());
 
   // ---------- utils ----------
   function alpha(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; }
-  function trunc(s, n) { s = s || 'Untitled'; return s.length > n ? s.slice(0, n-1) + '…' : s; }
+  function trunc(s, n) { s = s || 'Untitled'; return s.length > n ? s.slice(0, n - 1) + '…' : s; }
   function rel(iso) {
     if (!iso) return '?';
     const s = (Date.now() - new Date(iso)) / 1000;
-    if (s < 60) return 'just now';
-    if (s < 3600) return Math.round(s/60) + ' min ago';
-    if (s < 86400) return Math.round(s/3600) + ' h ago';
-    if (s < 86400*30) return Math.round(s/86400) + ' d ago';
-    return new Date(iso).toLocaleDateString();
+    if (s < 60) return 'just now'; if (s < 3600) return Math.round(s/60) + ' min ago'; if (s < 86400) return Math.round(s/3600) + ' h ago';
+    if (s < 86400*30) return Math.round(s/86400) + ' d ago'; if (s < YEAR/1000) return Math.round(s/86400/30) + ' mo ago';
+    return (s / (YEAR/1000)).toFixed(1) + ' y ago';
   }
+  // stash full-layout coords at load so mode switching can restore them
+  const _setGraph = setGraph;
+  setGraph = (g, src) => { for (const n of g.nodes) { n.px = n.x; n.py = n.y; } _setGraph(g, src); };
 
+  window.ng = { st, get view() { return view; }, get fg() { return fg; }, get graph() { return graph; }, get staticLayout() { return staticLayout; } };
   load();
 })();
 </script>
