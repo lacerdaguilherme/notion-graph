@@ -1,0 +1,12 @@
+{
+  "name": "notion-graph",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Obsidian-style graph view of a Notion workspace. Zero dependencies.",
+  "scripts": {
+    "fetch": "node fetch.js --mentions",
+    "build": "node fetch.js --mentions && node encrypt.js graph.json site/data.json && cp index.html site/index.html",
+    "serve": "python3 -m http.server 8000 --directory site"
+  },
+  "engines": { "node": ">=18" }
+}
