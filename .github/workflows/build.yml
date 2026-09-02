@@ -2,11 +2,11 @@ name: build graph
 
 on:
   schedule:
-    - cron: '17 */6 * * *'   # every 6 hours
+    - cron: '17 * * * *'    # hourly; cached runs only refetch pages that changed
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['fetch.js', 'encrypt.js', 'index.html', '.github/workflows/build.yml']
+    paths: ['fetch.js', 'layout.js', 'encrypt.js', 'index.html', '.github/workflows/build.yml']
 
 permissions:
   contents: write     # keepalive commit (see below)
@@ -28,22 +28,27 @@ jobs:
           node-version: 22
 
       # Raw Notion responses persist between runs, so only pages edited since
-      # the last run are re-fetched. First run is slow, the rest are fast.
-      - uses: actions/cache@v4
+      # the last run are re-fetched. Restored here, saved at the end even if a
+      # later step fails, so a long first crawl is never thrown away.
+      - uses: actions/cache/restore@v4
         with:
           path: .cache
           key: notion-cache-${{ github.run_id }}
           restore-keys: notion-cache-
 
-      # Creates the Pages site on first run so no manual settings change is needed.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Crawl Notion
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
         run: node fetch.js --mentions --out graph.json
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache
+          key: notion-cache-${{ github.run_id }}
+
+      - name: Precompute layout
+        run: node layout.js graph.json
 
       - name: Pack site
         env:
@@ -66,6 +71,8 @@ jobs:
             git commit --allow-empty -m "chore: keepalive"
             git push
           fi
+
+      - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
