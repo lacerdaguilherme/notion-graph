@@ -1,0 +1,82 @@
+name: build graph
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['fetch.js', 'encrypt.js', 'index.html', '.github/workflows/build.yml']
+
+permissions:
+  contents: write     # keepalive commit (see below)
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Raw Notion responses persist between runs, so only pages edited since
+      # the last run are re-fetched. First run is slow, the rest are fast.
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: notion-cache-${{ github.run_id }}
+          restore-keys: notion-cache-
+
+      # Creates the Pages site on first run so no manual settings change is needed.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Crawl Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: node fetch.js --mentions --out graph.json
+
+      - name: Pack site
+        env:
+          GRAPH_PASSWORD: ${{ secrets.GRAPH_PASSWORD }}
+        run: |
+          mkdir -p site
+          cp index.html site/index.html
+          node encrypt.js graph.json site/data.json
+          echo '{"builtAt":"'"$(date -u +%FT%TZ)"'"}' > site/build.json
+
+      # GitHub pauses cron on public repos after 60 days without a commit.
+      # An empty commit every ~50 days keeps the schedule alive.
+      - name: Keepalive
+        if: github.event_name == 'schedule'
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ "$last" -lt $(( $(date +%s) - 50*86400 )) ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: keepalive"
+            git push
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
