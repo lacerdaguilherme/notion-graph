@@ -8,7 +8,8 @@
   :root { --bg:#0f0f12; --fg:#e8e8ec; --dim:#8a8a94; --panel:rgba(20,20,26,.94); --border:#2a2a33; --accent:#7c9cff; --hi:#1c1c24; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
-  #graph { position:absolute; inset:0; }
+  #graph, #graph3d { position:absolute; inset:0; }
+  select { background:#15151a; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:3px 5px; font-size:12px; max-width:160px; }
   .panel { position:absolute; z-index:5; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:10px 12px; backdrop-filter:blur(6px); }
   #left { top:12px; left:12px; width:250px; display:flex; flex-direction:column; gap:9px; max-height:calc(100vh - 70px); overflow:auto; }
   #right { top:12px; right:12px; width:270px; max-height:calc(100vh - 70px); display:flex; flex-direction:column; gap:8px; }
@@ -23,12 +24,12 @@
   button:hover { border-color:var(--accent); }
   button.on { border-color:var(--accent); background:#1f2540; }
   button.primary { background:var(--accent); color:#0f0f12; border-color:var(--accent); font-weight:600; }
-  #legend { display:flex; flex-direction:column; gap:3px; }
-  #legend .it { display:flex; align-items:center; gap:6px; cursor:pointer; padding:2px 4px; border-radius:5px; color:var(--fg); }
-  #legend .it:hover, #legend .it.on { background:var(--hi); }
-  #legend .it.off { opacity:.4; }
-  #legend .it span.t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
-  #legend .it span.c { color:var(--dim); font-size:11px; }
+  .legend { display:flex; flex-direction:column; gap:3px; }
+  .legend .it { display:flex; align-items:center; gap:6px; cursor:pointer; padding:2px 4px; border-radius:5px; color:var(--fg); }
+  .legend .it:hover, #legend .it.on { background:var(--hi); }
+  .legend .it.off { opacity:.4; }
+  .legend .it span.t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .legend .it span.c { color:var(--dim); font-size:11px; }
   input[type=range] { width:100%; accent-color:var(--accent); }
   #status { position:absolute; bottom:12px; left:12px; color:var(--dim); font-size:12px; display:flex; gap:12px; align-items:center; z-index:5; }
   #status b { color:var(--fg); font-weight:600; }
@@ -57,6 +58,7 @@
 </head>
 <body>
 <div id="graph"></div>
+<div id="graph3d" style="display:none"></div>
 
 <div id="left" class="panel">
   <input id="q" type="search" placeholder="Search…  ( / )   Enter = go to first match" autocomplete="off">
@@ -64,21 +66,30 @@
     <button id="mode" class="on" title="fold database rows into their database">rows collapsed</button>
     <button id="fit" title="zoom to fit">fit</button>
     <button id="relayout" title="run the live force layout from scratch">re-layout</button>
+    <button id="dim3" title="3D view: the z axis separates layers">3D</button>
+  </div>
+  <div class="row" id="zrow" style="display:none">
+    <span>depth (z)</span>
+    <select id="zmode"><option value="group">layer per colour group</option><option value="depth">hierarchy depth</option><option value="free">free</option></select>
   </div>
   <div class="h">edges</div>
   <div class="row">
-    <label><input type="checkbox" data-kind="parent" checked><span class="sw" style="background:#5f6b85"></span>parent</label>
+    <label><input type="checkbox" data-kind="parent"><span class="sw" style="background:#5f6b85"></span>parent</label>
     <label><input type="checkbox" data-kind="relation" checked><span class="sw" style="background:#f2b36b"></span>relation</label>
     <label><input type="checkbox" data-kind="mention" checked><span class="sw" style="background:#7cd992"></span>mention</label>
+    <label title="rows of the junction database drawn as edges"><input type="checkbox" data-kind="typed" checked><span class="sw" style="background:#ff7ab6"></span>typed</label>
   </div>
+  <div class="row"><label><input type="checkbox" id="relColor">colour relations by name</label></div>
+  <div class="row"><span title="each row becomes an edge between the pages it relates to, labelled by its select (e.g. Tipo)">junction db</span><select id="junction"><option value="">none</option></select></div>
+  <div id="edgeLegend" class="legend"></div>
   <div class="row">
     <label><input type="checkbox" id="orphans" checked>orphans</label>
     <label><input type="checkbox" id="labels">all labels</label>
   </div>
   <div class="h">edited after <span id="dateLbl" style="color:var(--fg)">—</span></div>
   <input id="date" type="range" min="0" max="1000" value="0">
-  <div class="h">sections <span id="legendHint" style="text-transform:none;letter-spacing:0">(click to isolate)</span></div>
-  <div id="legend"></div>
+  <div class="h">colour by <select id="colorBy"></select> <span id="legendHint" style="text-transform:none;letter-spacing:0">(click to isolate)</span></div>
+  <div id="legend" class="legend"></div>
 </div>
 
 <div id="right" class="panel">
@@ -106,7 +117,7 @@
 </div>
 
 <div id="status"><span><b id="nN">0</b> nodes</span><span><b id="nE">0</b> edges</span><span id="gen"></span></div>
-<div id="hint">click = select · double-click = open in Notion · drag = pin<br><span id="src"></span> · <a id="rebuild" href="#" target="_blank" rel="noopener">rebuild now ↗</a></div>
+<div id="hint"><span id="live" style="display:none"><span id="liveLbl"></span> <button id="sync" title="pull changes from Notion now (only pages edited since the last sync are refetched)">sync now</button> <label title="reload the graph automatically when the server finishes a sync"><input type="checkbox" id="autosync" checked> live</label><br></span>click = select · double-click = open in Notion · drag = pin<br><span id="src"></span> · <a id="rebuild" href="#" target="_blank" rel="noopener">rebuild now ↗</a></div>
 <div id="tip"><div class="t"></div><div class="m"></div></div>
 
 <div id="lock">
@@ -120,11 +131,17 @@
   </form>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/force-graph@1.47.0/dist/force-graph.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/force-graph@1.47.0/dist/force-graph.min.js" integrity="sha384-wJ8GC4sPuv0fkYoh+IVpwQLj3V516JypPve+iz6xn9bBqIcqjGsgrBSf2kaA9E0E" crossorigin="anonymous"></script>
 <script>
 (() => {
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
-  const EDGE = { parent:'#5f6b85', relation:'#f2b36b', mention:'#7cd992' };
+  const EDGE = { parent:'#5f6b85', relation:'#f2b36b', mention:'#7cd992', typed:'#ff7ab6' };
+  const LIB3D = [
+    ['https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js', 'sha384-Lwojr+0fOVR25P8bdL6E0T2dv0q0ZT4Yy2Ia1dGOz6b5jLSzWZkdqlw0cKTQYKzT'],
+    ['https://cdn.jsdelivr.net/npm/three-spritetext@1.9.6/dist/three-spritetext.min.js', 'sha384-YETpYtG9DamnwRNPjJ7gxRPtdXTAg/IK7dY+M9K/ocxVSmmX9GI/SW/F+yJga18B'],
+    ['https://cdn.jsdelivr.net/npm/3d-force-graph@1.77.0/dist/3d-force-graph.min.js', 'sha384-LPDOi9GJtMLOTUwn16B77nCwZUN+OyFozMjJddWwf7EXi7Bzog8ZaclbVm0bay3e'],
+  ];
+  const LAYER_GAP = 90;
   const PALETTE = ['#7c9cff','#f2b36b','#7cd992','#ff7ab6','#5ad1e6','#c99cff','#ffd166','#ff8c69','#8bd7b5','#e6a2ff','#9ad0ff','#f5c6a5'];
   const GREY = '#6b6b75';
   const YEAR = 365 * 86400 * 1000;
@@ -149,9 +166,11 @@
   const ls = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch {} }, del(k){ try { localStorage.removeItem(k); } catch {} } };
 
   // ---------- state ----------
-  let graph = null, byId = new Map(), rootInfo = new Map(), roots = [];
+  let graph = null, byId = new Map(), rootInfo = new Map(), roots = [], groups = new Map(), groupList = [];
+  let fg3 = null, lib3d = null, fit3 = false;
+  const labelColors = new Map();
   let fg = null, hover = null;
-  const st = { collapsed:true, expanded:new Set(), kinds:{parent:true, relation:true, mention:true}, orphans:true, labels:false, minDate:0, rootFilter:null, selected:null, hops:0, query:'', tab:'hubs' };
+  const st = { collapsed:true, expanded:new Set(), kinds:{parent:false, relation:true, mention:true, typed:true}, orphans:true, labels:false, minDate:0, groupFilter:null, colorBy:'database', relColor:false, junction:'', is3d:false, zmode:'group', selected:null, hops:0, query:'', tab:'hubs' };
   let overrides = {};              // dragged positions {mode:id -> [x,y]}
   let view = { nodes:[], links:[] }; // current visible data
   let vdeg = new Map(), vneigh = new Map(), labelMin = Infinity;
@@ -163,6 +182,10 @@
     overrides = (await idb.get('overrides')) || {};
     const cached = await idb.get('graph');
     if (cached) setGraph(cached, 'local cache');
+    await refreshData();
+    initLive();
+  }
+  async function refreshData() {
     try {
       const res = await fetch('data.json', { cache:'no-cache' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -174,6 +197,42 @@
     } catch (e) {
       $('#src').innerHTML = graph ? 'offline · showing cached graph' : 'no data yet — run the <b>build graph</b> workflow once (' + e.message + ')';
     }
+  }
+  // ---------- live sync (only when served by serve.js) ----------
+  let live = null, livePoll = null;
+  const getStatus = async () => { const r = await fetch('api/status', { cache:'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+  async function initLive() {
+    try { live = await getStatus(); } catch { return; } // static hosting: no server, keep the GitHub rebuild link
+    $('#live').style.display = ''; $('#rebuild').style.display = 'none';
+    $('#autosync').checked = ls.get('ng:live') !== '0';
+    $('#autosync').addEventListener('change', (e) => ls.set('ng:live', e.target.checked ? '1' : '0'));
+    $('#sync').addEventListener('click', syncNow);
+    showLive();
+    setInterval(() => pollLive(false), 15000);
+  }
+  function showLive() {
+    const l = $('#liveLbl');
+    l.textContent = live.running ? 'syncing with Notion…' : 'synced ' + rel(live.lastSync ? new Date(live.lastSync).toISOString() : null) + (live.everyMin ? ` · auto every ${live.everyMin} min` : '');
+    l.style.color = live.lastError ? '#ff7a7a' : '';
+    l.title = live.lastError || '';
+    $('#sync').disabled = live.running;
+  }
+  async function pollLive(manual) {
+    const prev = live.lastSync;
+    try { live = await getStatus(); } catch { return; }
+    showLive();
+    if (live.lastSync !== prev && (manual || $('#autosync').checked)) refreshData();
+    if (live.running && !livePoll) livePoll = setInterval(() => pollLive(manual), 2000);
+    if (!live.running && livePoll) { clearInterval(livePoll); livePoll = null; }
+  }
+  async function syncNow() {
+    try {
+      const r = await fetch('api/sync', { method:'POST' });
+      const body = await r.json();
+      live = body; showLive();
+      if (body.result === 'fresh') $('#liveLbl').textContent = `cached: last sync < ${body.minGapS}s ago`;
+      else pollLive(true);
+    } catch (e) { $('#liveLbl').textContent = 'sync failed: ' + e.message; }
   }
   function rebuildUrl() {
     const m = location.hostname.match(/^([^.]+)\.github\.io$/), repo = location.pathname.split('/')[1];
@@ -210,7 +269,8 @@
     for (const n of g.nodes) { const r = rootInfo.get(n.root) || { id:n.root, count:0 }; r.count++; rootInfo.set(n.root, r); }
     roots = [...rootInfo.values()].sort((a, b) => b.count - a.count);
     roots.forEach((r, i) => { r.color = i < PALETTE.length ? PALETTE[i] : GREY; r.title = byId.get(r.id)?.title || 'Untitled'; });
-    if (st.rootFilter && !rootInfo.has(st.rootFilter)) st.rootFilter = null;
+    fillSelects();
+    computeGroups();
     // date slider bounds
     const times = g.nodes.map((n) => +new Date(n.lastEdited || 0)).filter((t) => t > 0);
     st.tMin = Math.min(...times); st.tMax = Date.now();
@@ -228,7 +288,7 @@
       .backgroundColor('#0f0f12')
       .nodeId('id')
       .nodeLabel(() => '')
-      .linkColor((l) => alpha(EDGE[l.kind] || '#888', linkDim(l) ? .05 : Math.min(.7, .3 + (l.weight || 1) * .04)))
+      .linkColor((l) => alpha(edgeColor(l), linkDim(l) ? .05 : Math.min(.7, .3 + (l.weight || 1) * .04)))
       .linkWidth((l) => { const w = 0.5 + Math.log2(l.weight || 1) * .8; return isHot(l) ? w + 1.2 : w; })
       .nodeCanvasObjectMode(() => 'replace')
       .nodeCanvasObject(drawNode)
@@ -241,13 +301,46 @@
       .onZoom(() => { if (hover) tip(null); })
       .onEngineStop(() => { if (!staticLayout || st.hops) fg.zoomToFit(0, 60); });
     el.addEventListener('dblclick', () => { if (hover) window.open(hover.url, '_blank', 'noopener'); });
-    window.addEventListener('resize', () => { f.width(el.clientWidth).height(el.clientHeight); if (Date.now() < autoFitUntil) setTimeout(() => f.zoomToFit(0, 40), 50); });
+    window.addEventListener('resize', () => { f.width(el.clientWidth).height(el.clientHeight); if (fg3) fg3.width(innerWidth).height(innerHeight); if (Date.now() < autoFitUntil) setTimeout(() => f.zoomToFit(0, 40), 50); });
     return f;
   }
 
   const modeKey = () => (st.hops ? 'local' : st.collapsed ? 'c' : 'f');
   const radius = (n) => Math.min(16, (n.type === 'database' ? 4 : n.row ? 1.6 : 2.4) + Math.sqrt(vdeg.get(n.id) || 0) * 1.1);
-  const colorOf = (n) => (rootInfo.get(n.root)?.color) || GREY;
+  function groupKey(n) {
+    if (st.colorBy === 'database') return n.type === 'database' ? n.id : n.row ? n.parentId : '__pages';
+    if (st.colorBy === 'section') return n.root;
+    const v = n.tags && n.tags[st.colorBy.slice(4)];
+    return v && v.length ? v[0] : '(none)';
+  }
+  function groupTitle(k) {
+    if (st.colorBy === 'database' || st.colorBy === 'section') return k === '__pages' ? 'pages' : byId.get(k)?.title || 'Untitled';
+    return k;
+  }
+  function computeGroups() {
+    groups = new Map();
+    for (const n of graph.nodes) { const k = groupKey(n); const g = groups.get(k) || { key:k, count:0 }; g.count++; groups.set(k, g); }
+    groupList = [...groups.values()].sort((a, b) => b.count - a.count);
+    groupList.forEach((g, i) => { g.color = i < PALETTE.length ? PALETTE[i] : GREY; g.title = groupTitle(g.key); g.layer = i; });
+    if (st.groupFilter && !groups.has(st.groupFilter)) st.groupFilter = null;
+  }
+  const colorOf = (n) => (groups.get(groupKey(n))?.color) || GREY;
+  const labelColor = (s) => { s = s || '?'; if (!labelColors.has(s)) labelColors.set(s, PALETTE[labelColors.size % PALETTE.length]); return labelColors.get(s); };
+  const edgeColor = (l) => (l.kind === 'typed' || (st.relColor && l.kind === 'relation') ? labelColor(l.label) : EDGE[l.kind] || '#888');
+  function fillSelects() {
+    const keys = new Map();
+    for (const n of graph.nodes) for (const k of Object.keys(n.tags || {})) keys.set(k, (keys.get(k) || 0) + 1);
+    const cb = $('#colorBy'); cb.innerHTML = '';
+    cb.append(new Option('database', 'database'), new Option('section', 'section'));
+    for (const [k] of [...keys].sort((a, b) => b[1] - a[1])) cb.append(new Option('tag: ' + k, 'tag:' + k));
+    if (![...cb.options].some((o) => o.value === st.colorBy)) st.colorBy = 'database';
+    cb.value = st.colorBy;
+    const jn = $('#junction'); jn.innerHTML = ''; jn.append(new Option('none', ''));
+    for (const d of graph.nodes.filter((n) => n.type === 'database')) jn.append(new Option(d.title, d.id));
+    if (![...jn.options].some((o) => o.value === st.junction)) st.junction = '';
+    jn.value = st.junction;
+  }
+  const tagLine = (n) => Object.entries(n.tags || {}).map(([k, v]) => k + ': ' + v.join(', ')).join(' · ');
 
   function drawNode(n, ctx, scale) {
     const r = radius(n), dim = nodeDim(n), col = colorOf(n);
@@ -277,16 +370,31 @@
     const g = graph;
     const rep = new Map();
     for (const n of g.nodes) rep.set(n.id, st.collapsed && n.row && !st.expanded.has(n.parentId) ? n.parentId : n.id);
-    const pass = (n) => (!st.rootFilter || n.root === st.rootFilter) && (!st.minDate || +new Date(n.lastEdited || 0) >= st.minDate || (n.type === 'database' && st.collapsed));
+    // junction database: each row relating >= 2 pages becomes typed edges between them
+    const hidden = new Set(), extra = [];
+    if (st.junction && st.kinds.typed) {
+      const nb = new Map();
+      for (const l of g.links) if (l.kind === 'relation') for (const [a, b] of [[l.source, l.target], [l.target, l.source]]) {
+        const n = byId.get(a); if (n && n.row && n.parentId === st.junction) (nb.get(a) || nb.set(a, new Set()).get(a)).add(b);
+      }
+      for (const [id, set] of nb) {
+        // pair only targets living in the same database (Side A / Side B -> same db), so context links to other databases don't become edges
+        const byDb = new Map();
+        for (const t of set) { const k = byId.get(t)?.parentId || t; (byDb.get(k) || byDb.set(k, []).get(k)).push(t); }
+        const n = byId.get(id), tags = n.tags || {}, label = (tags.Tipo || tags.Type || Object.values(tags)[0] || [byId.get(st.junction)?.title])[0];
+        for (const ts of byDb.values()) for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) { hidden.add(id); extra.push({ source:ts[i], target:ts[j], kind:'typed', label, via:id }); }
+      }
+    }
+    const pass = (n) => !hidden.has(n.id) && (!st.groupFilter || groupKey(n) === st.groupFilter) && (!st.minDate || +new Date(n.lastEdited || 0) >= st.minDate || (n.type === 'database' && st.collapsed));
     let visible = new Set();
     for (const n of g.nodes) if (rep.get(n.id) === n.id && pass(n)) visible.add(n.id);
     // links mapped through rep
     const seen = new Map();
-    for (const l of g.links) {
-      if (!st.kinds[l.kind]) continue;
+    for (const l of extra.length ? g.links.concat(extra) : g.links) {
+      if (!st.kinds[l.kind] || hidden.has(l.source) || hidden.has(l.target)) continue;
       const s = rep.get(l.source), t = rep.get(l.target);
       if (!s || !t || s === t || !visible.has(s) || !visible.has(t)) continue;
-      const a = s < t ? s : t, b = s < t ? t : s, k = a + '|' + b + '|' + l.kind;
+      const a = s < t ? s : t, b = s < t ? t : s, k = a + '|' + b + '|' + l.kind + (l.kind === 'typed' || (st.relColor && l.kind === 'relation') ? '|' + l.label : '');
       const e = seen.get(k); if (e) e.weight++; else seen.set(k, { source:s, target:t, kind:l.kind, weight:1, label:l.label });
     }
     let links = [...seen.values()];
@@ -315,6 +423,14 @@
 
   function apply(first) {
     view = buildView();
+    renderEdgeLegend();
+    if (st.is3d && fg3) {
+      push3d();
+      $('#nN').textContent = view.nodes.length.toLocaleString();
+      $('#nE').textContent = view.links.length.toLocaleString();
+      renderSel();
+      return;
+    }
     const mode = modeKey();
     // positions
     const useStatic = staticLayout && !st.hops;
@@ -347,7 +463,7 @@
     else if (st.hops) setTimeout(() => fg.zoomToFit(0, 60), 1500);
     renderSel();
   }
-  const redraw = () => fg && fg.graphData(fg.graphData());
+  const redraw = () => { if (st.is3d && fg3) restyle3d(); else if (fg) fg.graphData(fg.graphData()); };
 
   // preserve precomputed full positions under px/py so collapsed/expanded switching is lossless
   const stashFull = () => { for (const n of graph.nodes) { if (n.px === undefined) { n.px = n.x; n.py = n.y; } } };
@@ -374,6 +490,7 @@
   function select(id, zoom) {
     st.selected = id;
     if (st.hops) apply(); else { renderSel(); redraw(); }
+    if (zoom && st.is3d && fg3) { focus3d(id); return; }
     if (zoom) { const n = byId.get(id); const vis = view.nodes.includes(n) ? n : byId.get(n.row && st.collapsed && !st.expanded.has(n.parentId) ? n.parentId : id); if (vis && Number.isFinite(vis.x)) { const ms = document.hidden ? 0 : 600; fg.centerAt(vis.x, vis.y, ms); fg.zoom(Math.max(fg.zoom(), 3), ms); } }
   }
   function renderSel() {
@@ -382,23 +499,127 @@
     box.style.display = 'flex';
     box.querySelector('.t').textContent = (n.icon ? n.icon + ' ' : '') + n.title;
     const rows = n.type === 'database' ? graph.nodes.filter((m) => m.parentId === n.id && m.row).length : 0;
-    box.querySelector('.m').textContent = `${n.type}${n.row ? ' (row)' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'}${rows ? ` · ${rows} rows` : ''} · edited ${rel(n.lastEdited)} · section: ${rootInfo.get(n.root)?.title || '?'}`;
+    box.querySelector('.m').textContent = `${n.type}${n.row ? ' (row)' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'}${rows ? ` · ${rows} rows` : ''} · edited ${rel(n.lastEdited)} · section: ${rootInfo.get(n.root)?.title || '?'}${n.tags && Object.keys(n.tags).length ? ' · ' + tagLine(n) : ''}`;
     const ex = $('#expand');
     if (n.type === 'database' && st.collapsed && rows) { ex.style.display = ''; ex.textContent = st.expanded.has(n.id) ? 'collapse rows' : `expand ${rows} rows`; } else ex.style.display = 'none';
     $$('#sel [data-hops]').forEach((b) => b.classList.toggle('on', +b.dataset.hops === st.hops));
   }
   function renderLegend() {
     const el = $('#legend'); el.innerHTML = '';
-    for (const r of roots.slice(0, 14)) {
+    for (const r of groupList.slice(0, 16)) {
       const d = document.createElement('div');
-      d.className = 'it' + (st.rootFilter ? (st.rootFilter === r.id ? ' on' : ' off') : '');
+      d.className = 'it' + (st.groupFilter ? (st.groupFilter === r.key ? ' on' : ' off') : '');
       d.innerHTML = `<span class="sw" style="background:${r.color}"></span><span class="t"></span><span class="c">${r.count}</span>`;
       d.querySelector('.t').textContent = r.title;
-      d.onclick = () => { st.rootFilter = st.rootFilter === r.id ? null : r.id; renderLegend(); apply(); };
+      d.onclick = () => { st.groupFilter = st.groupFilter === r.key ? null : r.key; renderLegend(); apply(); };
       el.appendChild(d);
     }
-    if (roots.length > 14) { const d = document.createElement('div'); d.className = 'it off'; d.innerHTML = `<span class="sw" style="background:${GREY}"></span><span class="t">${roots.length - 14} smaller sections</span>`; el.appendChild(d); }
+    if (groupList.length > 16) { const d = document.createElement('div'); d.className = 'it off'; d.innerHTML = `<span class="sw" style="background:${GREY}"></span><span class="t">${groupList.length - 16} smaller groups</span>`; el.appendChild(d); }
   }
+  function renderEdgeLegend() {
+    const el = $('#edgeLegend'); el.innerHTML = '';
+    const counts = new Map();
+    for (const l of view.links) if (l.kind === 'typed' || (st.relColor && l.kind === 'relation')) counts.set(l.label || '?', (counts.get(l.label || '?') || 0) + l.weight);
+    for (const [label, c] of [...counts].sort((a, b) => b[1] - a[1])) {
+      const d = document.createElement('div'); d.className = 'it';
+      d.innerHTML = `<span class="sw" style="background:${labelColor(label)}"></span><span class="t"></span><span class="c">${c}</span>`;
+      d.querySelector('.t').textContent = label;
+      el.appendChild(d);
+    }
+  }
+
+  // ---------- 3D ----------
+  const loadScript = ([src, integrity]) => new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.integrity = integrity; el.crossOrigin = 'anonymous'; el.onload = res; el.onerror = () => { el.remove(); rej(new Error('could not load ' + src)); }; document.head.appendChild(el); });
+  async function ensure3d() {
+    if (fg3) return;
+    lib3d = lib3d || LIB3D.reduce((p, s) => p.then(() => (s[0].includes('three@') && window.THREE) || (s[0].includes('spritetext') && window.SpriteText) || (s[0].includes('3d-force') && window.ForceGraph3D) ? null : loadScript(s)), Promise.resolve());
+    try { await lib3d; } catch (e) { lib3d = null; throw e; }
+    const el = $('#graph3d');
+    fg3 = ForceGraph3D()(el)
+      .width(el.clientWidth || innerWidth).height(el.clientHeight || innerHeight)
+      .backgroundColor('#0f0f12')
+      .nodeId('id').nodeLabel(() => '')
+      .nodeRelSize(1).nodeVal((n) => Math.pow(radius(n) * 1.3, 3)).nodeOpacity(.95).nodeResolution(12)
+      .linkOpacity(1).cooldownTime(6000)
+      .nodeThreeObjectExtend(true)
+      .onNodeHover((n) => { hover = n ? byId.get(n.id) : null; el.style.cursor = n ? 'pointer' : null; tip(hover); restyle3d(false); })
+      .onNodeClick((n, ev) => { if (ev && (ev.metaKey || ev.ctrlKey)) return window.open(n.url, '_blank', 'noopener'); select(n.id); })
+      .onNodeRightClick((n) => window.open(n.url, '_blank', 'noopener'))
+      .onNodeDragEnd((n) => { n.fx = n.x; n.fy = n.y; n.fz = n.z; n.pinned = true; })
+      .onBackgroundClick(() => { if (st.selected) { st.selected = null; if (st.hops) { st.hops = 0; apply(); } renderSel(); redraw(); } })
+      .onEngineStop(() => { if (fit3) { fit3 = false; fit3d(600); } });
+    fg3.cameraPosition({ x:500, y:250, z:450 }); // oblique: z layers read as stacked planes; zoomToFit keeps this direction
+    fg3.d3Force('charge').strength(-45);
+    fg3.d3Force('link').distance((l) => (l.kind === 'parent' ? 25 : 40));
+    restyle3d();
+  }
+  function layerZ(n) {
+    if (st.zmode === 'depth') return -(n.depth || 0) * LAYER_GAP;
+    if (st.zmode === 'group') { const g = groups.get(groupKey(n)), k = Math.min(groupList.length, 12); return ((Math.min(g ? g.layer : k - 1, k - 1)) - (k - 1) / 2) * LAYER_GAP; }
+    return undefined;
+  }
+  function push3d() {
+    const prev = new Map(fg3.graphData().nodes.map((n) => [n.id, n]));
+    if (!prev.size) { fit3 = true; setTimeout(() => fit3d(600), 2500); setTimeout(() => fit3d(600), 7000); }
+    const nodes = view.nodes.map((n) => {
+      const p = prev.get(n.id), c = { ...n, x:p ? p.x : n.x, y:p ? p.y : n.y, z:p ? p.z : (Math.random() - .5) * 200 };
+      delete c.fx; delete c.fy; delete c.fz;
+      if (p && p.pinned) { Object.assign(c, { fx:p.x, fy:p.y, fz:p.z, pinned:true }); return c; }
+      const z = layerZ(n); if (z !== undefined) { c.fz = z; c.z = z; }
+      return c;
+    });
+    fg3.graphData({ nodes, links: view.links.map((l) => ({ ...l })) });
+    restyle3d();
+  }
+  const showLabel3 = (n) => st.labels || n.type === 'database' || n.id === st.selected || (vdeg.get(n.id) || 0) >= Math.max(labelMin, 3) || (st.query && isMatch(n));
+  // labels=false (hover) only recolours; rebuilding every sprite per mousemove would churn GPU textures
+  function restyle3d(labels = true) {
+    if (!fg3) return;
+    fg3.nodeColor((n) => alpha(colorOf(n), nodeDim(n) ? .12 : 1))
+      .linkColor((l) => alpha(edgeColor(l), linkDim(l) ? .04 : isHot(l) ? .95 : .45))
+      .linkWidth((l) => (isHot(l) ? 1.2 : l.kind === 'typed' ? .8 : 0));
+    if (labels) fg3.nodeThreeObject((n) => {
+        if (!showLabel3(n) || typeof SpriteText === 'undefined') return null;
+        const t = new SpriteText((n.icon ? n.icon + ' ' : '') + trunc(n.title, 36));
+        t.color = nodeDim(n) ? 'rgba(232,232,236,.25)' : '#e8e8ec';
+        t.textHeight = n.type === 'database' ? 7 : 3.5;
+        t.position.y = -(radius(n) * 1.3 + t.textHeight);
+        return t;
+      });
+  }
+  // own fit: getGraphBbox() is thrown off by the label sprites (separate THREE instance)
+  function fit3d(ms) {
+    const ns = fg3.graphData().nodes.filter((n) => Number.isFinite(n.x));
+    if (!ns.length) return;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const n of ns) [n.x, n.y, n.z].forEach((v, i) => { lo[i] = Math.min(lo[i], v); hi[i] = Math.max(hi[i], v); });
+    const c = lo.map((v, i) => (v + hi[i]) / 2), r = Math.max(30, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2);
+    const cam = fg3.camera(), p = cam.position, d = [p.x - c[0], p.y - c[1], p.z - c[2]], len = Math.hypot(...d) || 1;
+    const dist = r / Math.sin((cam.fov * Math.PI) / 360) * 1.05;
+    fg3.cameraPosition({ x:c[0] + d[0] / len * dist, y:c[1] + d[1] / len * dist, z:c[2] + d[2] / len * dist }, { x:c[0], y:c[1], z:c[2] }, ms);
+  }
+  function focus3d(id) {
+    const n = fg3.graphData().nodes.find((x) => x.id === id) || fg3.graphData().nodes.find((x) => x.id === byId.get(id)?.parentId);
+    if (!n || !Number.isFinite(n.x)) return;
+    const d = 140, r = Math.hypot(n.x, n.y, n.z) || 1, k = 1 + d / r;
+    fg3.cameraPosition({ x:n.x * k, y:n.y * k, z:n.z * k }, n, 800);
+  }
+  async function toggle3d() {
+    st.is3d = !st.is3d;
+    if (st.is3d) {
+      $('#dim3').textContent = 'loading 3D…';
+      try { await ensure3d(); } catch (e) { st.is3d = false; $('#src').textContent = e.message; }
+      $('#dim3').textContent = '3D';
+    }
+    $('#dim3').classList.toggle('on', st.is3d);
+    $('#zrow').style.display = st.is3d ? '' : 'none';
+    $('#graph').style.display = st.is3d ? 'none' : '';
+    $('#graph3d').style.display = st.is3d ? '' : 'none';
+    if (fg3) { if (st.is3d) fg3.resumeAnimation(); else fg3.pauseAnimation(); }
+    hover = null; tip(null);
+    apply();
+  }
+
   function renderList() {
     const el = $('#list'); el.innerHTML = '';
     const now = Date.now();
@@ -424,7 +645,7 @@
     const t = $('#tip');
     if (!n) { t.style.display = 'none'; return; }
     t.querySelector('.t').textContent = (n.icon ? n.icon + ' ' : '') + n.title;
-    t.querySelector('.m').textContent = `${n.type}${n.row ? ' row' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'} · edited ${rel(n.lastEdited)}`;
+    t.querySelector('.m').textContent = `${n.type}${n.row ? ' row' : ''} · ${n.degree} link${n.degree === 1 ? '' : 's'} · edited ${rel(n.lastEdited)}${n.tags && Object.keys(n.tags).length ? ' · ' + tagLine(n) : ''}`;
     t.style.left = (mouse.x + 14) + 'px'; t.style.top = (mouse.y + 14) + 'px'; t.style.display = 'block';
   }
   const mouse = { x:0, y:0 };
@@ -438,9 +659,14 @@
   $$('input[data-kind]').forEach((cb) => cb.addEventListener('change', () => { st.kinds[cb.dataset.kind] = cb.checked; apply(); }));
   $('#orphans').addEventListener('change', (e) => { st.orphans = e.target.checked; apply(); });
   $('#labels').addEventListener('change', (e) => { st.labels = e.target.checked; redraw(); });
-  $('#fit').addEventListener('click', () => fg && fg.zoomToFit(500, 40));
+  $('#fit').addEventListener('click', () => { if (st.is3d && fg3) fit3d(500); else if (fg) fg.zoomToFit(500, 40); });
+  $('#dim3').addEventListener('click', toggle3d);
+  $('#zmode').addEventListener('change', (e) => { st.zmode = e.target.value; apply(); });
+  $('#colorBy').addEventListener('change', (e) => { st.colorBy = e.target.value; st.groupFilter = null; computeGroups(); renderLegend(); renderList(); apply(); });
+  $('#relColor').addEventListener('change', (e) => { st.relColor = e.target.checked; apply(); });
+  $('#junction').addEventListener('change', (e) => { st.junction = e.target.value; apply(); });
   $('#mode').addEventListener('click', () => { stashFull(); st.collapsed = !st.collapsed; st.hops = 0; $('#mode').textContent = st.collapsed ? 'rows collapsed' : 'rows expanded'; $('#mode').classList.toggle('on', st.collapsed); apply(); });
-  $('#relayout').addEventListener('click', () => { staticLayout = false; overrides = {}; idb.del('overrides'); for (const n of graph.nodes) { delete n.fx; delete n.fy; } apply(); });
+  $('#relayout').addEventListener('click', () => { if (st.is3d && fg3) fg3.graphData({ nodes:[], links:[] }); staticLayout = false; overrides = {}; idb.del('overrides'); for (const n of graph.nodes) { delete n.fx; delete n.fy; } apply(); });
   $('#open').addEventListener('click', () => { const n = byId.get(st.selected); if (n) window.open(n.url, '_blank', 'noopener'); });
   $('#expand').addEventListener('click', () => { const id = st.selected; if (st.expanded.has(id)) st.expanded.delete(id); else st.expanded.add(id); apply(); });
   $$('#sel [data-hops]').forEach((b) => b.addEventListener('click', () => { st.hops = +b.dataset.hops; apply(); }));
@@ -465,7 +691,7 @@
   const _setGraph = setGraph;
   setGraph = (g, src) => { for (const n of g.nodes) { n.px = n.x; n.py = n.y; } _setGraph(g, src); };
 
-  window.ng = { st, get view() { return view; }, get fg() { return fg; }, get graph() { return graph; }, get staticLayout() { return staticLayout; } };
+  window.ng = { st, get view() { return view; }, get fg() { return fg; }, get fg3() { return fg3; }, get graph() { return graph; }, get staticLayout() { return staticLayout; } };
   load();
 })();
 </script>

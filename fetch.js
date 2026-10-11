@@ -19,6 +19,7 @@ const FRESH = flag('--fresh');
 const OUT = opt('--out', 'graph.json');
 const CACHE_DIR = opt('--cache', '.cache');
 const MAX_DEPTH = 3;
+const ROOT = opt('--root', '').replace(/-/g, '').toLowerCase();
 
 // ---------- token ----------
 function loadEnvFile(file) {
@@ -35,9 +36,12 @@ function loadEnvFile(file) {
   }
   return out;
 }
-const TOKEN = process.env.NOTION_TOKEN || loadEnvFile(path.join(process.cwd(), '.env')).NOTION_TOKEN;
+const dotenv = loadEnvFile(path.join(process.cwd(), '.env'));
+const tokenFile = process.env.NOTION_TOKEN_FILE || dotenv.NOTION_TOKEN_FILE;
+const TOKEN = process.env.NOTION_TOKEN || dotenv.NOTION_TOKEN ||
+  (tokenFile ? fs.readFileSync(tokenFile.replace(/^~(?=\/)/, require('os').homedir()), 'utf8').trim() : '');
 if (!TOKEN) {
-  console.error('NOTION_TOKEN not found. Put it in .env or export it. See README.');
+  console.error('NOTION_TOKEN not found. Export NOTION_TOKEN or NOTION_TOKEN_FILE, or put either in .env. See README.');
   process.exit(1);
 }
 const API = process.env.NOTION_API_BASE || 'https://api.notion.com/v1';
@@ -171,6 +175,35 @@ function parentIdOf(obj) {
   return null;
 }
 
+// select / multi_select / status values, used by the viewer for colour and filters
+function tagsOf(obj) {
+  const out = {};
+  for (const [name, p] of Object.entries(obj.properties || {})) {
+    if (!p || obj.object !== 'page') continue;
+    const v = p[p.type];
+    if (p.type === 'select' || p.type === 'status') { if (v && v.name) out[name] = [v.name]; }
+    else if (p.type === 'multi_select' && Array.isArray(v) && v.length) out[name] = v.map((x) => x.name);
+  }
+  return out;
+}
+
+// page/database ids referenced by a rich_text array (mentions, link_mentions, notion.so hrefs)
+function richTextTargets(rich) {
+  const out = [];
+  for (const rt of rich || []) {
+    if (rt.type === 'mention' && rt.mention) {
+      const m = rt.mention;
+      if (m.type === 'page') out.push(m.page.id);
+      else if (m.type === 'database') out.push(m.database.id);
+      else if (m.type === 'link_mention' && m.link_mention) { const t = idFromUrl(m.link_mention.href); if (t) out.push(t); }
+    } else if (rt.href) {
+      const t = idFromUrl(rt.href);
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
 function iconOf(obj) {
   const ic = obj.icon;
   if (!ic) return null;
@@ -197,6 +230,7 @@ function iconOf(obj) {
       title: titleOf(r),
       type: r.object === 'database' ? 'database' : 'page',
       icon: iconOf(r),
+      tags: tagsOf(r),
       url: r.url || 'https://www.notion.so/' + id,
       parentId: parentIdOf(r),
       parentType: (r.parent && r.parent.type) || null,
@@ -208,6 +242,44 @@ function iconOf(obj) {
   }
   console.log(`    ${nodes.size} objects visible to the integration`);
 
+  // Pages inside columns/toggles have a block parent: climb the block tree to the owning page/database.
+  const blockOwner = new Map();
+  const resolveBlock = async (blockId) => {
+    const path = [];
+    for (let hops = 0; blockId && hops < 16; hops++) {
+      if (nodes.has(blockId)) break;
+      if (blockOwner.has(blockId)) { blockId = blockOwner.get(blockId); break; }
+      let b;
+      try {
+        b = await cachedRequest('GET', `/blocks/${blockId}`, null, 'block');
+      } catch (err) {
+        stats.errors.push(`block parent ${blockId}: ${err.message}`);
+        blockId = null;
+        break;
+      }
+      path.push(blockId);
+      blockId = parentIdOf(b);
+    }
+    for (const id of path) blockOwner.set(id, blockId);
+    return blockId;
+  };
+  for (const n of nodes.values()) {
+    if (n.parentType === 'block_id' && n.parentId && !nodes.has(n.parentId)) n.parentId = await resolveBlock(n.parentId);
+  }
+
+  if (ROOT) {
+    if (!nodes.has(ROOT)) throw new Error(`--root ${ROOT} is not visible to the integration`);
+    const inRoot = (n) => {
+      for (let guard = 0; n && guard < 64; guard++) {
+        if (n.id === ROOT) return true;
+        n = nodes.get(n.parentId);
+      }
+      return false;
+    };
+    for (const [id, n] of nodes) if (!inRoot(n)) { nodes.delete(id); raw.delete(id); }
+    console.log(`    ${nodes.size} objects under --root ${ROOT}`);
+  }
+
   const edges = new Map();
   const addEdge = (source, target, kind, label) => {
     source = normId(source);
@@ -218,7 +290,7 @@ function iconOf(obj) {
     if (kind === 'relation') {
       // a two-way relation shows up once from each side; keep a single edge
       const rev = edges.get(target + '|' + source + '|' + kind);
-      if (rev) { if (label && rev.label && !rev.label.includes(label)) rev.label += ' / ' + label; return; }
+      if (rev) { if (label && rev.label && !rev.label.split(' ↔ ').includes(label)) rev.label = [...rev.label.split(' ↔ '), label].sort().join(' ↔ '); return; }
     }
     edges.set(k, { source, target, kind, ...(label ? { label } : {}) });
   };
@@ -228,10 +300,14 @@ function iconOf(obj) {
   for (const n of nodes.values()) if (n.parentId && nodes.has(n.parentId)) addEdge(n.id, n.parentId, 'parent');
 
   // Step 3: relation edges.
-  console.log('3/5 relation edges...');
+  console.log('3/5 relation + property mention edges...');
   for (const [id, r] of raw) {
     if (r.object !== 'page' || !r.properties) continue;
     for (const [name, prop] of Object.entries(r.properties)) {
+      if (prop && (prop.type === 'rich_text' || prop.type === 'title')) {
+        for (const t of richTextTargets(prop[prop.type])) addEdge(id, t, 'mention', name);
+        continue;
+      }
       if (!prop || prop.type !== 'relation') continue;
       let rel = prop.relation || [];
       if (rel.length >= 25 || prop.has_more) {
@@ -266,20 +342,7 @@ function iconOf(obj) {
           const l = b.link_to_page || {};
           addEdge(ownerId, l.page_id || l.database_id, 'mention');
         }
-        for (const rt of inner.rich_text || []) {
-          if (rt.type === 'mention' && rt.mention) {
-            const m = rt.mention;
-            if (m.type === 'page') addEdge(ownerId, m.page.id, 'mention');
-            else if (m.type === 'database') addEdge(ownerId, m.database.id, 'mention');
-            else if (m.type === 'link_mention' && m.link_mention) {
-              const tid = idFromUrl(m.link_mention.href);
-              if (tid) addEdge(ownerId, tid, 'mention');
-            }
-          } else if (rt.href) {
-            const tid = idFromUrl(rt.href);
-            if (tid) addEdge(ownerId, tid, 'mention');
-          }
-        }
+        for (const t of richTextTargets(inner.rich_text)) addEdge(ownerId, t, 'mention');
         if (b.has_children && b.type !== 'child_page' && b.type !== 'child_database') {
           await walk(b.id, ownerId, version, depth + 1);
         }

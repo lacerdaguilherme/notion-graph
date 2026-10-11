@@ -6,7 +6,8 @@
   "scripts": {
     "fetch": "node fetch.js --mentions",
     "build": "node fetch.js --mentions && node layout.js graph.json && node encrypt.js graph.json site/data.json && cp index.html site/index.html",
-    "serve": "python3 -m http.server 8000 --directory site"
+    "serve": "python3 -m http.server 8000 --directory site",
+    "live": "node serve.js"
   },
   "engines": { "node": ">=18" }
 }
