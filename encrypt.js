@@ -17,7 +17,7 @@ const password = process.env.GRAPH_PASSWORD;
   const graph = fs.readFileSync(inFile);
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (!password) {
-    fs.writeFileSync(outFile, graph);
+    writeAtomic(outFile, graph);
     console.log(`wrote ${outFile} (plain, ${graph.length} bytes). Set GRAPH_PASSWORD to encrypt.`);
     return;
   }
@@ -38,6 +38,12 @@ const password = process.env.GRAPH_PASSWORD;
   const b64 = (u8) => Buffer.from(u8).toString('base64');
   const generatedAt = (() => { try { return JSON.parse(graph).generatedAt; } catch { return null; } })();
   const envelope = { encrypted: true, v: 1, kdf: 'PBKDF2-SHA256', iterations, salt: b64(salt), iv: b64(iv), gzip: true, generatedAt, data: b64(cipher) };
-  fs.writeFileSync(outFile, JSON.stringify(envelope));
+  writeAtomic(outFile, JSON.stringify(envelope));
   console.log(`wrote ${outFile} (encrypted, ${graph.length} -> ${cipher.length} bytes)`);
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// serve.js may read data.json mid-sync: never expose a half-written file
+function writeAtomic(file, data) {
+  fs.writeFileSync(file + '.tmp', data);
+  fs.renameSync(file + '.tmp', file);
+}

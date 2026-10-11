@@ -47,7 +47,16 @@ After that it rebuilds itself every hour.
   and press *expand N rows* to open just that one.
 - click a node to select it; the right panel shows its details, an *open in Notion* button and a
   **local graph** switch (1 or 2 hops). Double-click or right-click opens Notion directly.
-- **sections** legend: nodes are coloured by their top-level page; click a section to isolate it.
+- **colour by**: database (default), section (top-level page) or any select / multi-select / status
+  property (`tag: Tipo`, `tag: Status`…). Click a legend entry to isolate that group.
+- **edges**: `parent` (hierarchy, off by default like folders in Obsidian), `relation`, `mention`
+  (body *and* rich-text/title properties) and `typed`. **colour relations by name** gives each relation
+  property its own colour, with a legend.
+- **junction db**: pick a database whose rows describe a link between two pages (e.g. a "Relations"
+  database with `Side A` / `Side B` relations and a `Tipo` select). Each row becomes an edge between the
+  pages it relates *within the same database*, coloured by its `Tipo` (or first select).
+- **3D**: switches to a WebGL view (`3d-force-graph`, loaded on demand). *depth (z)* puts each colour
+  group on its own plane, or stacks by hierarchy depth, or lets the layout float freely.
 - **edited after** slider hides anything not touched since that date.
 - right panel tabs: **hubs** (most linked), **orphans** (no links at all), **stale** (untouched for a
   year), **recent**. Click any item to jump to it.
@@ -55,6 +64,7 @@ After that it rebuilds itself every hour.
 - hover highlights neighbours; drag pins a node (remembered on this device); **re-layout** discards
   the precomputed positions and runs a live simulation.
 - **rebuild now** (bottom right) opens the workflow page where one click triggers a fresh crawl.
+  When served by `serve.js` it is replaced by **sync now** + **live** (see below).
 
 The graph only shows links that already exist in Notion: no relation set and no `@mention` written means no edge.
 
@@ -72,6 +82,19 @@ python3 -m http.server 8000 --directory site
 
 Then open <http://localhost:8000>.
 
+### Live sync (`serve.js`)
+
+```bash
+NOTION_TOKEN_FILE=~/notion-token.txt NOTION_ROOT=<page id> node serve.js
+```
+
+Serves the viewer on <http://127.0.0.1:8766> and keeps `site/data.json` in sync with Notion:
+automatic sync every `SYNC_EVERY_MIN` minutes (default 10, `0` = manual only), a **sync now** button, and
+a **live** toggle that reloads the graph when a sync lands. Notion is never hit more often than
+`SYNC_MIN_GAP_S` (default 60 s), manual clicks included; inside that window the cached graph is served.
+Each sync only refetches pages edited since the last one (see caching below). The server answers only to
+local host names and rejects cross-site sync requests.
+
 ### `fetch.js` flags
 
 | flag | effect |
@@ -80,6 +103,9 @@ Then open <http://localhost:8000>.
 | `--fresh` | ignore `.cache/` and refetch everything |
 | `--out <path>` | output file, default `graph.json` |
 | `--cache <dir>` | cache directory, default `.cache` |
+| `--root <page id>` | only keep that page's subtree (pages inside columns/toggles are resolved to their page) |
+
+The token comes from `NOTION_TOKEN`, or from a file named by `NOTION_TOKEN_FILE`, either exported or in `.env`.
 
 ## How caching works
 
